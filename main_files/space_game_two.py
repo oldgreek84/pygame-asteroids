@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 
 import os
+import contextlib
 import math
 import random
 
 from superwires import color, games
+from settings import Config
 
 MEDIA_PATH = "./media"
-games.init(screen_width=640, screen_height=480, fps=50)
+games.init(Config.WIDTH, Config.HEIGHT, Config.FPS)
 
 
 class Wrapper(games.Sprite):
-    # ogibatel gravichnogo ekrana
     def update(self):
         if self.top > games.screen.height:
             self.bottom = 0
@@ -27,9 +28,7 @@ class Wrapper(games.Sprite):
 
 
 class Collider(Wrapper):
-    # pogibatel. ogibatel - stalkuetsya z insh obj ta gine
     def update(self):
-        # perevir chi nemae spritiv perekriv z nim
         super().update()
         if self.overlapping_sprites:
             for sprite in self.overlapping_sprites:
@@ -44,17 +43,19 @@ class Collider(Wrapper):
 
 class Asteroid(Wrapper):
 
+
     SMALL = 1
     MIDDLE = 2
     LARGE = 3
+    SPEED = 2
+    SPAWN = 2
+    POINTS = 30
+
     images = {
         SMALL: games.load_image(os.path.join(MEDIA_PATH, "astr_sml.png")),
         MIDDLE: games.load_image(os.path.join(MEDIA_PATH, "astr_mdl.png")),
         LARGE: games.load_image(os.path.join(MEDIA_PATH, "astr_lrg.png")),
     }
-    SPEED = 2
-    SPAWN = 2
-    POINTS = 30
 
     total = 0
 
@@ -94,14 +95,14 @@ class Ship(Collider):
     VELOCITY_MAX = 3
 
     def __init__(self, game, x, y):
-        super().__init__(image=Ship.image, x=x, y=y)
+        super().__init__(image=self.image, x=x, y=y)
         self.game = game
         self.missle_wait = 0
 
     def update(self):
         super().update()
-        self.dx = min(max(self.dx, -Ship.VELOCITY_MAX), Ship.VELOCITY_MAX)
-        self.dy = min(max(self.dy, -Ship.VELOCITY_MAX), Ship.VELOCITY_MAX)
+        self.dx = min(max(self.dx, -self.VELOCITY_MAX), self.VELOCITY_MAX)
+        self.dy = min(max(self.dy, -self.VELOCITY_MAX), self.VELOCITY_MAX)
 
         if games.keyboard.is_pressed(games.K_w):
             self.y -= 1
@@ -112,26 +113,28 @@ class Ship(Collider):
         if games.keyboard.is_pressed(games.K_d):
             self.x += 1
         if games.keyboard.is_pressed(games.K_RIGHT):
-            self.angle += Ship.ROT_STEP
+            self.angle += self.ROT_STEP
         if games.keyboard.is_pressed(games.K_LEFT):
-            self.angle -= Ship.ROT_STEP
+            self.angle -= self.ROT_STEP
         if games.keyboard.is_pressed(games.K_UP):
-            Ship.sound.play()
-            angle = self.angle * math.pi / 180  # preobraz radian
-            self.dx = Ship.MOV_STEP * math.sin(angle)
-            self.dy = Ship.MOV_STEP * -math.cos(angle)
+            self.sound.play()
+            angle = self.angle * math.pi / 180
+            self.dx = self.MOV_STEP * math.sin(angle)
+            self.dy = self.MOV_STEP * -math.cos(angle)
         if games.keyboard.is_pressed(games.K_1):
             self.angle = 0
         if games.keyboard.is_pressed(games.K_2):
             self.angle = 180
+        if games.keyboard.is_pressed(games.K_q):
+            self.game.end()
 
-        # dodavannya raket
+        # draw new fired rocket
         if self.missle_wait > 0:
             self.missle_wait -= 1
         if games.keyboard.is_pressed(games.K_SPACE) and self.missle_wait == 0:
             new_missle = Missle(self.x, self.y, self.angle)
             games.screen.add(new_missle)
-            self.missle_wait = Ship.MSL_DELAY
+            self.missle_wait = self.MSL_DELAY
 
     def die(self):
         self.game.end()
@@ -142,13 +145,13 @@ class Missle(Collider):
 
     image = games.load_image(os.path.join(MEDIA_PATH, "msl.png"))
     sound = games.load_sound(os.path.join(MEDIA_PATH, "missle.wav"))
-    BUFFER = 90  # vidstan raketi vid korablya
-    VEL_FACTOR = 7  # stupin shvidkosti raketi
+    BUFFER = 90  # distance to starship
+    VEL_FACTOR = 7  # rocket velocity
     LIFETIME = 40
 
     def __init__(self, ship_x, ship_y, ship_angle):
         Missle.sound.play()
-        angle = ship_angle * math.pi / 180  # preobraz radian
+        angle = ship_angle * math.pi / 180
         buffer_x = Missle.BUFFER * math.sin(angle)
         buffer_y = Missle.BUFFER * -math.cos(angle)
         x = ship_x + buffer_x
@@ -159,13 +162,8 @@ class Missle(Collider):
 
         self.lifetime = Missle.LIFETIME
 
-    # def die(self):
-    #   self.destroy()
-
     def update(self):
-
         super().update()
-
         self.lifetime -= 1
         if self.lifetime == 0:
             self.destroy()
@@ -190,6 +188,8 @@ class Explosion(games.Animation):
 
 
 class Game:
+    BUFFER = 150
+
     def __init__(self):
         self.level = 0
         self.sound = games.load_sound(os.path.join(MEDIA_PATH, "missle.wav"))
@@ -203,7 +203,10 @@ class Game:
         )
         games.screen.add(self.score)
 
-        self.ship = Ship(game=self, x=games.screen.width / 2, y=games.screen.height / 2)
+        self.ship = Ship(
+            game=self,
+            x=games.screen.width / 2,
+            y=games.screen.height / 2)
         games.screen.add(self.ship)
 
     def play(self):
@@ -219,10 +222,9 @@ class Game:
 
     def advance(self):
         self.level += 1
-        BUFFER = 150
         for _ in range(self.level):
-            x_min = random.randrange(BUFFER)
-            y_min = BUFFER - x_min
+            x_min = random.randrange(self.BUFFER)
+            y_min = self.BUFFER - x_min
             x_distance = random.randrange(x_min, games.screen.width - x_min)
             y_distance = random.randrange(y_min, games.screen.width - y_min)
             x = self.ship.x + x_distance
@@ -249,8 +251,8 @@ class Game:
 
     def end(self):
         end_msg = games.Message(
-            value="Game Over",
-            size=90,
+            value="Game Over. Press `q` key for exit.",
+            size=40,
             color=color.white,
             x=games.screen.width / 2,
             y=games.screen.height / 2,
@@ -259,6 +261,9 @@ class Game:
             is_collideable=False,
         )
         games.screen.add(end_msg)
+
+        if games.keyboard.is_pressed(games.K_q):
+            games.screen.quit()
 
 
 def main():
